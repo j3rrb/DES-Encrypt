@@ -17,29 +17,16 @@ KEY_8_BYTES = "DESCRYPT"
 
 # Função para converter uma string em binário
 def str_to_bin(user_input):
-    """
-    Converte uma string em binário, dividindo-a em blocos de 8 bytes.
+    binary_representation = ""
 
-    Args:
-        user_input (str): A string a ser convertida.
+    for char in user_input:
+        # Converte cada caractere em seu valor ASCII e, em seguida, em uma string binária de 1 byte.
+        binary_char = format(ord(char), "08b")
+        binary_representation += binary_char
+        binary_representation = binary_representation[:64]
 
-    Returns:
-        list: Uma lista de strings binárias, cada uma representando um bloco da string de entrada.
-    """
-    binary_representation = []
-    for i in range(0, len(user_input), 8):
-        block = user_input[i : i + 8]
-        binary_block = ""
-
-        for char in block:
-            # Converte cada caractere em binário e adiciona ao bloco
-            binary_char = format(ord(char), "08b")
-            binary_block += binary_char
-
-        # Adiciona o bloco à lista de representações binárias
-        binary_representation.append(
-            binary_block.ljust(64, "0")
-        )  # Preenche a string com 0 até ter 8 bytes
+    # Limita a representação binária à 64 bits e completa com zeros à esquerda se necessário.
+    binary_representation = binary_representation[:64].ljust(64, "0")
 
     return binary_representation
 
@@ -55,10 +42,11 @@ def binary_to_ascii(binary_str):
     Returns:
         str: A string ASCII correspondente à string binária de entrada.
     """
+
+    # Itera sobre a string binária em grupos de 8 bits, converte cada grupo em um caractere ASCII e junta todos os caracteres em uma string.
     ascii_str = "".join(
         [chr(int(binary_str[i : i + 8], 2)) for i in range(0, len(binary_str), 8)]
     )
-
     return ascii_str
 
 
@@ -77,6 +65,7 @@ def ip_on_binary_rep(binary_representation):
 
     for i in range(64):
         ip_result[i] = binary_representation[ip_table[i] - 1]
+
     ip_result_str = "".join(ip_result)
 
     return ip_result_str
@@ -93,7 +82,6 @@ def key_in_binary_conv():
     binary_representation_key = ""
 
     for char in KEY_8_BYTES:
-        # Converte cada caractere em binário e adiciona à chave
         binary_key = format(ord(char), "08b")
         binary_representation_key += binary_key
 
@@ -110,19 +98,18 @@ def generate_round_keys():
     """
     binary_representation_key = key_in_binary_conv()
     pc1_key_str = "".join(binary_representation_key[bit - 1] for bit in pc1_table)
+
     c0 = pc1_key_str[:28]
     d0 = pc1_key_str[28:]
     round_keys = []
 
     for round_num in range(16):
-        # Realiza o shift circular nas metades da chave
         c0 = c0[shift_rounds[round_num] :] + c0[: shift_rounds[round_num]]
         d0 = d0[shift_rounds[round_num] :] + d0[: shift_rounds[round_num]]
-        # Concatena as metades da chave
         cd_concatenated = c0 + d0
-        # Aplica a permutação PC2
+
         round_key = "".join(cd_concatenated[bit - 1] for bit in pc2_table)
-        # Adiciona a chave de rodada à lista
+
         round_keys.append(round_key)
 
     return round_keys
@@ -139,36 +126,59 @@ def encryption_block(binary_block):
     Returns:
         str: O bloco criptografado.
     """
+    binary_rep_of_input = str_to_bin(binary_block)
     round_keys = generate_round_keys()
-    ip_result = ip_on_binary_rep(binary_block)
-    left_half = ip_result[:32]
-    right_half = ip_result[32:]
+
+    ip_result_str = ip_on_binary_rep(binary_rep_of_input)
+
+    lpt = ip_result_str[:32]
+    rpt = ip_result_str[32:]
 
     for round_num in range(16):
-        # Realiza a expansão da metade direita
-        expanded_right_half = "".join(right_half[e_box_table[i] - 1] for i in range(48))
-        # Realiza o XOR com a chave de rodada
-        xor_result = "".join(
-            str(int(expanded_right_half[i]) ^ int(round_keys[round_num][i]))
-            for i in range(48)
-        )
-        # Divide o resultado em blocos de 6 bits
-        s_box_input = [xor_result[i : i + 6] for i in range(0, 48, 6)]
-        # Aplica as caixas de substituição S
-        s_box_output = "".join(s_boxes[i][int(s_box_input[i], 2)] for i in range(8))
-        # Realiza a permutação P
-        p_box_output = "".join(s_box_output[p_box_table[i] - 1] for i in range(32))
-        # Realiza o XOR com a metade esquerda
-        left_half = "".join(
-            str(int(left_half[i]) ^ int(p_box_output[i])) for i in range(32)
-        )
-        # Troca as metades
-        left_half, right_half = right_half, left_half
+        expanded_result = [rpt[i - 1] for i in e_box_table]
 
-    # Realiza a permutação inversa
-    ip_inverse_result = "".join(right_half[ip_inverse_table[i] - 1] for i in range(64))
+        expanded_result_str = "".join(expanded_result)
 
-    return ip_inverse_result
+        round_key_str = round_keys[round_num]
+
+        xor_result_str = ""
+        for i in range(48):
+            xor_result_str += str(int(expanded_result_str[i]) ^ int(round_key_str[i]))
+
+        # Divide o resultado do XOR em grupos de 6 bits
+        six_bit_groups = [xor_result_str[i : i + 6] for i in range(0, 48, 6)]
+
+        s_box_substituted = ""
+
+        for i in range(8):
+            # Seleciona os bits de linha da tabela S-Box
+            row_bits = int(six_bit_groups[i][0] + six_bit_groups[i][-1], 2)
+            # Seleciona os bits de coluna da tabela S-Box.
+            col_bits = int(six_bit_groups[i][1:-1], 2)
+
+            s_box_value = s_boxes[i][row_bits][col_bits]
+
+            # Adiciona o valor formatado em 4 bits à substituição.
+            s_box_substituted += format(s_box_value, "04b")
+
+        p_box_result = [s_box_substituted[i - 1] for i in p_box_table]
+
+        lpt_list = list(lpt)
+
+        # Realiza o XOR entre a parte lpt do bloco e a string permutada.
+        new_rpt = [str(int(lpt_list[i]) ^ int(p_box_result[i])) for i in range(32)]
+
+        new_rpt_str = "".join(new_rpt)
+
+        lpt = rpt
+        rpt = new_rpt_str
+
+    final_result = rpt + lpt
+    final_cipher = [final_result[ip_inverse_table[i] - 1] for i in range(64)]
+    final_cipher_str = "".join(final_cipher)
+    final_cipher_ascii = binary_to_ascii(final_cipher_str)
+
+    return final_cipher_ascii
 
 
 # Função para realizar a criptografia de uma string
@@ -182,8 +192,11 @@ def encryption(user_input):
     Returns:
         str: A string criptografada.
     """
-    binary_representation = str_to_bin(user_input)
-    encrypted_blocks = [encryption_block(block) for block in binary_representation]
+
+    # Divide o texto em blocos de 8 bytes
+    encrypted_blocks = [
+        encryption_block(user_input[i : i + 8]) for i in range(0, len(user_input), 8)
+    ]
     encrypted_text = "".join(encrypted_blocks)
 
     return encrypted_text
@@ -200,36 +213,62 @@ def decryption_block(binary_block):
     Returns:
         str: O bloco descriptografado.
     """
+    binary_rep_of_input = str_to_bin(binary_block)
     round_keys = generate_round_keys()
-    ip_result = ip_on_binary_rep(binary_block)
-    left_half = ip_result[:32]
-    right_half = ip_result[32:]
 
-    for round_num in range(15, -1, -1):
-        # Realiza a expansão da metade direita
-        expanded_right_half = "".join(right_half[e_box_table[i] - 1] for i in range(48))
-        # Realiza o XOR com a chave de rodada
-        xor_result = "".join(
-            str(int(expanded_right_half[i]) ^ int(round_keys[round_num][i]))
-            for i in range(48)
-        )
-        # Divide o resultado em blocos de 6 bits
-        s_box_input = [xor_result[i : i + 6] for i in range(0, 48, 6)]
-        # Aplica as caixas de substituição S
-        s_box_output = "".join(s_boxes[i][int(s_box_input[i], 2)] for i in range(8))
-        # Realiza a permutação P
-        p_box_output = "".join(s_box_output[p_box_table[i] - 1] for i in range(32))
-        # Realiza o XOR com a metade esquerda
-        left_half = "".join(
-            str(int(left_half[i]) ^ int(p_box_output[i])) for i in range(32)
-        )
-        # Troca as metades
-        left_half, right_half = right_half, left_half
+    ip_dec_result_str = ip_on_binary_rep(binary_rep_of_input)
 
-    # Realiza a permutação inversa
-    ip_inverse_result = "".join(right_half[ip_inverse_table[i] - 1] for i in range(64))
+    lpt = ip_dec_result_str[:32]
+    rpt = ip_dec_result_str[32:]
 
-    return ip_inverse_result
+    for round_num in range(16):
+        expanded_result = [rpt[i - 1] for i in e_box_table]
+
+        expanded_result_str = "".join(expanded_result)
+
+        # Seleciona a chave de rodada atual.
+        round_key_str = round_keys[15 - round_num]
+
+        xor_result_str = ""
+        for i in range(48):
+            # Realiza o XOR entre a chave de rodada e a parte expandida do bloco.
+            xor_result_str += str(int(expanded_result_str[i]) ^ int(round_key_str[i]))
+
+        six_bit_groups = [xor_result_str[i : i + 6] for i in range(0, 48, 6)]
+
+        s_box_substituted = ""
+
+        for i in range(8):
+            # Seleciona os bits de linha da tabela S-Box.
+            row_bits = int(six_bit_groups[i][0] + six_bit_groups[i][-1], 2)
+            # Seleciona os bits de coluna da tabela S-Box.
+            col_bits = int(six_bit_groups[i][1:-1], 2)
+
+            s_box_value = s_boxes[i][row_bits][col_bits]
+
+            # Adiciona o valor formatado em 4 bits à substituição.
+            s_box_substituted += format(s_box_value, "04b")
+
+        p_box_result = [s_box_substituted[i - 1] for i in p_box_table]
+
+        lpt_list = list(lpt)
+
+        # Realiza o XOR entre a parte lpt do bloco e a string permutada.
+        new_rpt = [str(int(lpt_list[i]) ^ int(p_box_result[i])) for i in range(32)]
+
+        new_rpt_str = "".join(new_rpt)
+
+        lpt = rpt
+        rpt = new_rpt_str
+
+    final_result = rpt + lpt
+    final_cipher = [final_result[ip_inverse_table[i] - 1] for i in range(64)]
+
+    final_cipher_str = "".join(final_cipher)
+
+    final_cipher_ascii = binary_to_ascii(final_cipher_str)
+
+    return final_cipher_ascii
 
 
 # Função para realizar a descriptografia de uma string
@@ -243,13 +282,13 @@ def decryption(encrypted_text):
     Returns:
         str: A string descriptografada.
     """
-    binary_blocks = [
-        encrypted_text[i : i + 64] for i in range(0, len(encrypted_text), 64)
+    decryption_blocks = [
+        decryption_block(encrypted_text[i : i + 8])
+        for i in range(0, len(encrypted_text), 8)
     ]
-    decrypted_blocks = [decryption_block(block) for block in binary_blocks]
-    decrypted_text = "".join(decrypted_blocks)
-    
-    return binary_to_ascii(decrypted_text)
+    decrypted_text = "".join(decryption_blocks)
+
+    return decrypted_text
 
 
 def main():
@@ -257,9 +296,14 @@ def main():
     print("Chave utilizada: ", KEY_8_BYTES, "\n")
     sleep(2)
     encrypted_text = encryption(user_input)
-    print("Texto criptografado em binário:", encrypted_text, "\n")
+    bin_enc_text = "".join(format(ord(char), "08b") for char in encrypted_text)
+    print(
+        "Texto criptografado em binário:",
+        bin_enc_text,
+        "\n",
+    )
     sleep(2)
-    encrypted_ascii = binary_to_ascii(encrypted_text)
+    encrypted_ascii = binary_to_ascii(bin_enc_text)
     print("Texto criptografado em ASCII:", encrypted_ascii, "\n")
     sleep(2)
 
